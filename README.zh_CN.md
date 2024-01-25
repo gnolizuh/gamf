@@ -1,4 +1,4 @@
-English | [中文](README.zh_CN.md)
+[English](README.md) | 中文
 
 # gamf
 
@@ -6,20 +6,20 @@ English | [中文](README.zh_CN.md)
 [![GoDoc](https://godoc.org/github.com/goccy/go-json?status.svg)](https://pkg.go.dev/github.com/goccy/go-json?tab=doc)
 [![codecov](https://codecov.io/gh/goccy/go-json/branch/master/graph/badge.svg)](https://codecov.io/gh/goccy/go-json)
 
-Easiest AMF encoder/decoder for Go.
+基于Go实现的极简AMF编解码库
 
-# Features
+# 特性
 
-- Usage exactly similar to std.json
-- Flexible customization with options
+- 用法与json标准库类似
+- 灵活的自定义选项
 
-# Installation
+# 安装
 
 ```
 go get github.com/gnolizuh/gamf
 ```
 
-# How to use
+# 用法
 
 ```
 type Struct struct {
@@ -39,6 +39,6 @@ s := Struct{}
 Unmarshal(bs, &s)
 ```
 
-# Reference
+# 引用
 
 - https://rtmp.veriskope.com/pdf/amf0-file-format-specification.pdf
