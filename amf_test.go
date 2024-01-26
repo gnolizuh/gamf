@@ -8,14 +8,14 @@ import (
 
 func TestInt(t *testing.T) {
 	in := 1
-	b, err := Marshal(in)
+	bs, err := Marshal(in)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
 	var out int
-	err = Unmarshal(b, &out)
+	err = Unmarshal(bs, &out)
 	if err != nil {
 		t.Error(err)
 		return
@@ -26,14 +26,14 @@ func TestInt(t *testing.T) {
 
 func TestUInt(t *testing.T) {
 	in := uint(1)
-	b, err := Marshal(in)
+	bs, err := Marshal(in)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
 	var out uint
-	err = Unmarshal(b, &out)
+	err = Unmarshal(bs, &out)
 	if err != nil {
 		t.Error(err)
 		return
@@ -44,14 +44,14 @@ func TestUInt(t *testing.T) {
 
 func TestFloat(t *testing.T) {
 	in := 1.0
-	b, err := Marshal(in)
+	bs, err := Marshal(in)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
 	var out float64
-	err = Unmarshal(b, &out)
+	err = Unmarshal(bs, &out)
 	if err != nil {
 		t.Error(err)
 		return
@@ -62,14 +62,14 @@ func TestFloat(t *testing.T) {
 
 func TestString(t *testing.T) {
 	in := "1"
-	b, err := Marshal(in)
+	bs, err := Marshal(in)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
 	var out string
-	err = Unmarshal(b, &out)
+	err = Unmarshal(bs, &out)
 	if err != nil {
 		t.Error(err)
 		return
@@ -80,14 +80,14 @@ func TestString(t *testing.T) {
 
 func TestBool(t *testing.T) {
 	in := true
-	b, err := Marshal(&in)
+	bs, err := Marshal(&in)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
 	out := false
-	err = Unmarshal(b, &out)
+	err = Unmarshal(bs, &out)
 	if err != nil {
 		t.Error(err)
 		return
@@ -114,14 +114,14 @@ func TestStruct2Struct(t *testing.T) {
 	in.Object.String = "1"
 	in.Object.Bool = true
 
-	b, err := Marshal(in)
+	bs, err := Marshal(in)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
 	out := Struct{}
-	err = Unmarshal(b, &out)
+	err = Unmarshal(bs, &out)
 	if err != nil {
 		t.Error(err)
 		return
@@ -148,14 +148,14 @@ func TestStruct2Map(t *testing.T) {
 	in.Object.String = "1"
 	in.Object.Bool = true
 
-	b, err := Marshal(in)
+	bs, err := Marshal(in)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
 	m := make(map[string]interface{})
-	err = Unmarshal(b, &m)
+	err = Unmarshal(bs, &m)
 	if err != nil {
 		t.Error(err)
 		return
@@ -200,14 +200,14 @@ func TestMap2Struct(t *testing.T) {
 			"tag_bool":   true,
 		},
 	}
-	b, err := Marshal(m)
+	bs, err := Marshal(m)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
 	out := Struct{}
-	err = Unmarshal(b, &out)
+	err = Unmarshal(bs, &out)
 	if err != nil {
 		t.Error(err)
 		return
@@ -231,14 +231,14 @@ func TestMap2Struct(t *testing.T) {
 
 func TestSlice(t *testing.T) {
 	in := []interface{}{1.0, "1", true, map[string]interface{}{"Int": 1.0, "String": "1", "Bool": true}}
-	b, err := Marshal(in)
+	bs, err := Marshal(in)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
 	out := []interface{}{0.0, "0", false, map[string]interface{}{}}
-	err = Unmarshal(b, &out)
+	err = Unmarshal(bs, &out)
 	if err != nil {
 		t.Error(err)
 		return
