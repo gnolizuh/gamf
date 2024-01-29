@@ -25,6 +25,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 )
 
@@ -46,7 +47,7 @@ type MarshalerError struct {
 
 func (e *MarshalerError) Error() string {
 	srcFunc := e.sourceFunc
-	if srcFunc == "" {
+	if srcFunc == StringEmpty {
 		srcFunc = "MarshalAMF"
 	}
 	return "amf: error calling " + srcFunc +
@@ -58,13 +59,8 @@ func (e *MarshalerError) Error() string {
 type encodeState struct {
 	bytes.Buffer // accumulated output
 
-	// Keep track of what pointers we've seen in the current recursive call
-	// path, to avoid cycles that could lead to a stack overflow. Only do
-	// the relatively expensive map operations if ptrLevel is larger than
-	// startDetectingCyclesAfter, so that we skip the work if we're within a
-	// reasonable amount of nested pointers deep.
-	ptrLevel uint
-	ptrSeen  map[any]struct{}
+	strReference Reference
+	objReference Reference
 }
 
 var encodeStatePool sync.Pool
@@ -73,13 +69,12 @@ func newEncodeState() *encodeState {
 	if v := encodeStatePool.Get(); v != nil {
 		e := v.(*encodeState)
 		e.Reset()
-		if len(e.ptrSeen) > 0 {
-			panic("ptrEncoder.encode should have emptied ptrSeen via defers")
-		}
-		e.ptrLevel = 0
 		return e
 	}
-	return &encodeState{ptrSeen: make(map[any]struct{})}
+	return &encodeState{
+		strReference: Reference{m: make(map[interface{}]int), a: make([]interface{}, 0)},
+		objReference: Reference{m: make(map[interface{}]int), a: make([]interface{}, 0)},
+	}
 }
 
 // amfError is an error wrapper type for internal use only.
@@ -135,16 +130,19 @@ func (e *encodeState) reflectValue(v reflect.Value, opts encOpts) {
 }
 
 type encOpts struct {
+	// ver3 means AMF version, which is true for AMF3, default is AMF0.
+	ver3 bool
+
 	// quoted causes primitive fields to be encoded inside AMF strings.
 	quoted bool
 }
 
 func (e *encodeState) encodeObjectName(s string) {
-	e.encodeUint(uint16(len(s)))
+	e.writeUint(uint16(len(s)))
 	e.Write([]byte(s))
 }
 
-func (e *encodeState) encodeMarker(m byte) {
+func (e *encodeState) writeMarker(m byte) {
 	e.WriteByte(m)
 }
 
@@ -169,38 +167,176 @@ func (w *reflectWithString) resolve() error {
 	panic("unexpected map key type")
 }
 
-func (e *encodeState) encodeString(s string) {
-	l := len(s)
-	if l > LongStringSize {
-		e.encodeMarker(LongStringMarker)
-		e.encodeUint(uint32(l))
+// encodeString encoding rule:
+// AMF0:
+//   - len(s) <= 0: string-marker[1B] + length[2B] + s
+//   - len(s) > 0xffff: long-string-marker[1B] + length[4B] + s
+//
+// AMF3:
+//   - no cache: string-marker[1B] + length[29b] + s
+//   - cached: string-marker[1B] + index[29b]
+func (e *encodeState) encodeString(s string, opts encOpts) {
+	if !opts.ver3 {
+		l := len(s)
+		if l > LongStringSize {
+			e.writeMarker(LongStringMarker0)
+			e.writeUint(uint32(l))
+		} else {
+			e.writeMarker(StringMarker0)
+			e.writeUint(uint16(l))
+		}
+		e.Write([]byte(s))
 	} else {
-		e.encodeMarker(StringMarker)
-		e.encodeUint(uint16(l))
+		e.writeMarker(StringMarker3)
+		i, ok := e.strReference.get(s)
+		if ok {
+			e.writeU29(uint32(i << 1))
+			return
+		}
+		l := len(s)
+		e.writeU29(uint32((l << 1) | 1))
+		if l > 0 {
+			_ = e.strReference.set(s)
+		}
+		e.Write([]byte(s))
 	}
-	e.Write([]byte(s))
 }
 
-func (e *encodeState) encodeUint(u interface{}) {
+func (e *encodeState) writeUint(u interface{}) {
 	_ = binary.Write(e, binary.BigEndian, u)
 }
 
-func (e *encodeState) encodeBool(b bool) {
-	e.encodeMarker(BooleanMarker)
-	if b {
-		e.WriteByte(1)
+// writeU29 AMF3 only.
+func (e *encodeState) writeU29(v uint32) {
+	v = v & 0x1fffffff
+	b := make([]byte, 0, 4)
+	switch {
+	case v < 0x80:
+		b = append(b, byte(v))
+	case v < 0x4000:
+		b = append(b, byte((v>>7)|0x80))
+		b = append(b, byte(v&0x7f))
+	case v < 0x200000:
+		b = append(b, byte((v>>14)|0x80))
+		b = append(b, byte((v>>7)|0x80))
+		b = append(b, byte(v&0x7f))
+	case v < 0x20000000:
+		b = append(b, byte((v>>22)|0x80))
+		b = append(b, byte((v>>15)|0x80))
+		b = append(b, byte((v>>7)|0x80))
+		b = append(b, byte(v&0xff))
+	default:
+		return
+	}
+	e.Write(b)
+}
+
+// encodeBool encoding rule:
+//
+// AMF0:
+//   - bool-marker[1B] + b
+//
+// AMF3:
+//   - true: true-marker[1B]
+//   - false: false-marker[1B]
+func (e *encodeState) encodeBool(b bool, opts encOpts) {
+	if !opts.ver3 {
+		e.writeMarker(BooleanMarker0)
+		if b {
+			e.WriteByte(1)
+		} else {
+			e.WriteByte(0)
+		}
 	} else {
-		e.WriteByte(0)
+		if b {
+			e.WriteByte(TrueMarker3)
+		} else {
+			e.WriteByte(FalseMarker3)
+		}
 	}
 }
 
-func (e *encodeState) encodeFloat64(f float64) {
-	e.encodeMarker(NumberMarker)
-	_ = binary.Write(e, binary.BigEndian, f)
+// encodeInt encoding rule:
+//
+// AMF0:
+//   - number-marker[1B] + i[8B]
+//
+// AMF3:
+//   - -2^28 <= i <= 2^28: integer-marker[1B] + i[29b]
+//   - else: encode as AMF3 double.
+func (e *encodeState) encodeInt(i int64, opts encOpts) {
+	if !opts.ver3 {
+		e.encodeFloat64(float64(i), opts)
+	} else {
+		if i < Int28Min && i >= Int28Max {
+			e.encodeFloat64(float64(i), opts)
+		} else {
+			e.writeMarker(IntegerMarker3)
+			e.writeU29(uint32(i))
+		}
+	}
 }
 
-func (e *encodeState) encodeNull() {
-	e.WriteByte(NullMarker)
+// encodeUInt it's same with encodeInt.
+func (e *encodeState) encodeUInt(ui uint64, opts encOpts) {
+	if !opts.ver3 {
+		e.encodeFloat64(float64(ui), opts)
+	} else {
+		if ui >= UInt29Max {
+			e.encodeFloat64(float64(ui), opts)
+		} else {
+			e.writeMarker(IntegerMarker3)
+			e.writeU29(uint32(ui))
+		}
+	}
+}
+
+// encodeDate:
+//
+// - AMF0: date-marker[1B] DOUBLE[8B] time-zone[2B]
+// - AMF3: date-marker (U29O-ref | (U29D-value date-time))
+func (e *encodeState) encodeDate(v reflect.Value, opts encOpts) {
+	t := v.Interface().(time.Time)
+	if !opts.ver3 {
+		e.writeMarker(DateMarker0)
+		_ = binary.Write(e, binary.BigEndian, t.UnixMilli())
+		_ = binary.Write(e, binary.BigEndian, 0x0000) // time-zone
+	} else {
+		e.writeMarker(DateMarker3)
+		i, ok := e.strReference.get(v)
+		if ok {
+			e.writeU29(uint32(i << 1))
+			return
+		}
+		_ = e.strReference.set(v)
+		e.writeU29(uint32(0x01))
+		e.writeUint(t.UnixMilli())
+	}
+}
+
+// encodeFloat64 encoding rule:
+//
+// AMF0:
+//   - number-marker[1B] + i[8B]
+//
+// AMF3:
+//   - double-marker[1B] + i[8B]
+func (e *encodeState) encodeFloat64(f float64, opts encOpts) {
+	if !opts.ver3 {
+		e.writeMarker(NumberMarker0)
+		_ = binary.Write(e, binary.BigEndian, f)
+	} else {
+		e.writeMarker(DoubleMarker3)
+		_ = binary.Write(e, binary.BigEndian, f)
+	}
+}
+
+func (e *encodeState) encodeNull(opts encOpts) {
+	if !opts.ver3 {
+		e.WriteByte(NullMarker0)
+	} else {
+		e.WriteByte(NullMarker3)
+	}
 }
 
 type encoderFunc func(e *encodeState, v reflect.Value, opts encOpts)
@@ -271,11 +407,11 @@ func newTypeEncoder(t reflect.Type) encoderFunc {
 	case reflect.Ptr:
 		return newPtrEncoder(t)
 	default:
-		return unsupportedTypeEncoder
+		return newDefaultEncoder()
 	}
 }
 
-func marshalerEncoder(e *encodeState, v reflect.Value, opts encOpts) {
+func marshalerEncoder(e *encodeState, v reflect.Value, _ encOpts) {
 	if v.Kind() == reflect.Pointer && v.IsNil() {
 		e.WriteString("null")
 		return
@@ -296,40 +432,44 @@ func marshalerEncoder(e *encodeState, v reflect.Value, opts encOpts) {
 	}
 }
 
-func stringEncoder(e *encodeState, v reflect.Value, _ encOpts) {
-	e.encodeString(v.String())
+func stringEncoder(e *encodeState, v reflect.Value, opts encOpts) {
+	e.encodeString(v.String(), opts)
 }
 
-func boolEncoder(e *encodeState, v reflect.Value, _ encOpts) {
-	e.encodeBool(v.Bool())
+func boolEncoder(e *encodeState, v reflect.Value, opts encOpts) {
+	e.encodeBool(v.Bool(), opts)
 }
 
-func invalidValueEncoder(e *encodeState, _ reflect.Value, _ encOpts) {
-	e.encodeNull()
+func invalidValueEncoder(e *encodeState, _ reflect.Value, opts encOpts) {
+	e.encodeNull(opts)
 }
 
-func intEncoder(e *encodeState, v reflect.Value, _ encOpts) {
-	e.encodeFloat64(float64(v.Int()))
+func intEncoder(e *encodeState, v reflect.Value, opts encOpts) {
+	e.encodeInt(v.Int(), opts)
 }
 
-func uintEncoder(e *encodeState, v reflect.Value, _ encOpts) {
-	e.encodeFloat64(float64(v.Uint()))
+func uintEncoder(e *encodeState, v reflect.Value, opts encOpts) {
+	e.encodeUInt(v.Uint(), opts)
 }
 
-func floatEncoder(e *encodeState, v reflect.Value, _ encOpts) {
-	e.encodeFloat64(v.Float())
+func floatEncoder(e *encodeState, v reflect.Value, opts encOpts) {
+	e.encodeFloat64(v.Float(), opts)
+}
+
+func dateEncoder(e *encodeState, v reflect.Value, opts encOpts) {
+	e.encodeDate(v, opts)
 }
 
 func interfaceEncoder(e *encodeState, v reflect.Value, opts encOpts) {
 	if v.IsNil() {
-		e.encodeNull()
+		e.encodeNull(opts)
 		return
 	}
 	e.reflectValue(v.Elem(), opts)
 }
 
 func isValidTag(s string) bool {
-	if s == "" {
+	if s == StringEmpty {
 		return false
 	}
 	for _, c := range s {
@@ -342,19 +482,6 @@ func isValidTag(s string) bool {
 		}
 	}
 	return true
-}
-
-func fieldByIndex(v reflect.Value, index []int) reflect.Value {
-	for _, i := range index {
-		if v.Kind() == reflect.Ptr {
-			if v.IsNil() {
-				return reflect.Value{}
-			}
-			v = v.Elem()
-		}
-		v = v.Field(i)
-	}
-	return v
 }
 
 func typeByIndex(t reflect.Type, index []int) reflect.Type {
@@ -377,13 +504,34 @@ type structFields struct {
 	byFoldedName map[string]*field
 }
 
-// marker: 1 byte 0x03
-// format:
-// - loop encoded string followed by encoded value
-// - terminated with empty string followed by 1 byte 0x09
+// structEncoder encoding rule:
+//
+// AMF0:
+//   - object-marker[1B] + [object...] + "" + end-object-marker[1B]
+//
+// AMF3:
+//  1. object-marker U29O-ref *value-type *dynamic-member
+//  2. object-marker U29O-traits-ext class-name *(UTF-8-vr) *value-type *dynamic-member
+//  3. object-marker U29O-traits-ref *value-type *dynamic-member
+//  4. object-marker U29O-traits class-name *(UTF-8-vr) *value-type *dynamic-member
 func (se *structEncoder) encode(e *encodeState, v reflect.Value, opts encOpts) {
-	e.encodeMarker(ObjectMarker)
+	// write start marker
+	if !opts.ver3 {
+		e.writeMarker(ObjectMarker0)
+	} else {
+		e.writeMarker(ObjectMarker3)
+		i, ok := e.strReference.get(v)
+		if ok {
+			e.writeU29(uint32(i << 1))
+			return
+		}
+		_ = e.strReference.set(v)
+		e.writeMarker(0x0b)
+		e.encodeString(StringEmpty, opts)
+	}
+
 FieldLoop:
+	// write object
 	for i := range se.fields.list {
 		f := &se.fields.list[i]
 
@@ -403,11 +551,25 @@ FieldLoop:
 			continue
 		}
 		opts.quoted = f.quoted
-		e.encodeObjectName(f.name)
-		f.encoder(e, fv, opts)
+		if !opts.ver3 {
+			e.encodeObjectName(f.name)
+		} else {
+			e.encodeString(f.name, opts)
+		}
+		if f.xml && fv.Kind() == reflect.String {
+			encodeXML(e, fv, opts)
+		} else {
+			f.encoder(e, fv, opts)
+		}
 	}
-	e.encodeObjectName("")
-	e.encodeMarker(ObjectEndMarker)
+
+	// write end marker
+	if !opts.ver3 {
+		e.encodeObjectName(StringEmpty)
+		e.writeMarker(ObjectEndMarker0)
+	} else {
+		e.encodeString(StringEmpty, opts)
+	}
 }
 
 func newStructEncoder(t reflect.Type) encoderFunc {
@@ -421,7 +583,7 @@ type mapEncoder struct {
 
 func (mae *mapEncoder) encode(e *encodeState, v reflect.Value, opts encOpts) {
 	if v.IsNil() {
-		e.encodeNull()
+		e.encodeNull(opts)
 		return
 	}
 
@@ -435,13 +597,38 @@ func (mae *mapEncoder) encode(e *encodeState, v reflect.Value, opts encOpts) {
 	}
 	sort.Slice(sv, func(i, j int) bool { return sv[i].s < sv[j].s })
 
-	e.encodeMarker(ObjectMarker)
+	// write start marker
+	if !opts.ver3 {
+		e.writeMarker(ObjectMarker0)
+	} else {
+		e.writeMarker(ObjectMarker3)
+		i, ok := e.strReference.get(v)
+		if ok {
+			e.writeU29(uint32(i << 1))
+			return
+		}
+		_ = e.strReference.set(v)
+		e.writeMarker(0x0b)
+		e.encodeString(StringEmpty, opts)
+	}
+
+	// write object
 	for _, kv := range sv {
-		e.encodeObjectName(kv.s)
+		if !opts.ver3 {
+			e.encodeObjectName(kv.s)
+		} else {
+			e.encodeString(kv.s, opts)
+		}
 		mae.elemEnc(e, v.MapIndex(kv.v), opts)
 	}
-	e.encodeObjectName("")
-	e.encodeMarker(ObjectEndMarker)
+
+	// write end marker
+	if !opts.ver3 {
+		e.encodeObjectName(StringEmpty)
+		e.writeMarker(ObjectEndMarker0)
+	} else {
+		e.encodeString(StringEmpty, opts)
+	}
 }
 
 func newMapEncoder(t reflect.Type) encoderFunc {
@@ -452,8 +639,32 @@ func newMapEncoder(t reflect.Type) encoderFunc {
 	default:
 		return unsupportedTypeEncoder
 	}
-	mae := &mapEncoder{typeEncoder(t.Elem())}
+	mae := &mapEncoder{elemEnc: typeEncoder(t.Elem())}
 	return mae.encode
+}
+
+func encodeXML(e *encodeState, v reflect.Value, opts encOpts) {
+	if v.IsNil() {
+		e.encodeNull(opts)
+		return
+	}
+
+	s := v.Interface().(string)
+	if !opts.ver3 {
+		e.writeMarker(XMLDocumentMarker0)
+		e.writeUint(uint32(len(s)))
+		e.WriteString(s)
+	} else {
+		e.writeMarker(XMLDocMarker3)
+		i, ok := e.strReference.get(v)
+		if ok {
+			e.writeU29(uint32(i << 1))
+			return
+		}
+		_ = e.strReference.set(v)
+		e.writeU29(uint32((i << 1) | 1))
+		e.WriteString(s)
+	}
 }
 
 type sliceEncoder struct {
@@ -462,14 +673,14 @@ type sliceEncoder struct {
 
 func (se *sliceEncoder) encode(e *encodeState, v reflect.Value, opts encOpts) {
 	if v.IsNil() {
-		e.encodeNull()
+		e.encodeNull(opts)
 		return
 	}
 	se.arrayEnc(e, v, opts)
 }
 
 func newSliceEncoder(t reflect.Type) encoderFunc {
-	enc := &sliceEncoder{newArrayEncoder(t)}
+	enc := &sliceEncoder{arrayEnc: newArrayEncoder(t)}
 	return enc.encode
 }
 
@@ -477,25 +688,42 @@ type arrayEncoder struct {
 	elemEnc encoderFunc
 }
 
-// marker: 1 byte 0x0a
-// format:
-// - 4 byte big endian uint32 to determine length of associative array
-// - n (length) encoded values
+// arrayEncoder
+//   - AMF0: strict-array-marker array-count[4B] *(value-type)
+//   - AMF3: array-marker (U29O-ref[29b] | (U29A-value (UTF-8-empty | *(assoc-value) UTF-8-empty) *(value-type)))
+//     assoc-value means value with name, value-type means value with no name.
 func (ae *arrayEncoder) encode(e *encodeState, v reflect.Value, opts encOpts) {
 	if v.IsNil() || v.Len() == 0 {
-		e.encodeMarker(UndefinedMarker)
+		if !opts.ver3 {
+			e.writeMarker(UndefinedMarker0)
+		} else {
+			e.writeMarker(UndefinedMarker3)
+		}
 		return
 	}
 
-	e.encodeMarker(StrictArrayMarker)
-	e.encodeUint(uint32(v.Len()))
+	if !opts.ver3 {
+		e.writeMarker(StrictArrayMarker0)
+		e.writeUint(uint32(v.Len()))
+	} else {
+		e.writeMarker(ArrayMarker3)
+		i, ok := e.strReference.get(v)
+		if ok {
+			e.writeU29(uint32(i << 1))
+			return
+		}
+		_ = e.strReference.set(v)
+		e.writeU29((uint32(v.Len()) << 1) | 1)
+		e.WriteByte(UTF8Empty)
+	}
+
 	for i := 0; i < v.Len(); i++ {
 		ae.elemEnc(e, v.Index(i), opts)
 	}
 }
 
 func newArrayEncoder(t reflect.Type) encoderFunc {
-	enc := &arrayEncoder{typeEncoder(t.Elem())}
+	enc := &arrayEncoder{elemEnc: typeEncoder(t.Elem())}
 	return enc.encode
 }
 
@@ -505,15 +733,33 @@ type ptrEncoder struct {
 
 func (pe *ptrEncoder) encode(e *encodeState, v reflect.Value, opts encOpts) {
 	if v.IsNil() {
-		e.encodeNull()
+		e.encodeNull(opts)
 		return
 	}
 	pe.elemEnc(e, v.Elem(), opts)
 }
 
 func newPtrEncoder(t reflect.Type) encoderFunc {
-	enc := &ptrEncoder{typeEncoder(t.Elem())}
+	enc := &ptrEncoder{elemEnc: typeEncoder(t.Elem())}
 	return enc.encode
+}
+
+type defaultEncoder struct {
+	elemEnc encoderFunc
+}
+
+func newDefaultEncoder() encoderFunc {
+	de := defaultEncoder{}
+	return de.encode
+}
+
+func (de *defaultEncoder) encode(e *encodeState, v reflect.Value, opts encOpts) {
+	switch v.Interface().(type) {
+	case time.Time:
+		dateEncoder(e, v, opts)
+	default:
+		unsupportedTypeEncoder(e, v, opts)
+	}
 }
 
 func unsupportedTypeEncoder(e *encodeState, v reflect.Value, _ encOpts) {
@@ -572,9 +818,9 @@ func Marshal(v any) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	buf := append([]byte(nil), e.Bytes()...)
+	b := append([]byte(nil), e.Bytes()...)
 
-	return buf, nil
+	return b, nil
 }
 
 // Marshaler is the interface implemented by types that
@@ -592,14 +838,10 @@ type field struct {
 	index     []int
 	typ       reflect.Type
 	omitEmpty bool
+	xml       bool
 	quoted    bool
 
 	encoder encoderFunc
-}
-
-func fillField(f field) field {
-	f.nameBytes = []byte(f.name)
-	return f
 }
 
 // byIndex sorts field by index sequence.
@@ -672,14 +914,14 @@ func typeFields(t reflect.Type) structFields {
 				}
 				name, opts := parseTag(tag)
 				if !isValidTag(name) {
-					name = ""
+					name = StringEmpty
 				}
 				index := make([]int, len(f.index)+1)
 				copy(index, f.index)
 				index[len(f.index)] = i
 
 				ft := sf.Type
-				if ft.Name() == "" && ft.Kind() == reflect.Pointer {
+				if ft.Name() == StringEmpty && ft.Kind() == reflect.Pointer {
 					// Follow pointer.
 					ft = ft.Elem()
 				}
@@ -698,9 +940,9 @@ func typeFields(t reflect.Type) structFields {
 				}
 
 				// Record found field and index sequence.
-				if name != "" || !sf.Anonymous || ft.Kind() != reflect.Struct {
-					tagged := name != ""
-					if name == "" {
+				if name != StringEmpty || !sf.Anonymous || ft.Kind() != reflect.Struct {
+					tagged := name != StringEmpty
+					if name == StringEmpty {
 						name = sf.Name
 					}
 					field := field{
@@ -709,6 +951,7 @@ func typeFields(t reflect.Type) structFields {
 						index:     index,
 						typ:       ft,
 						omitEmpty: opts.Contains("omitempty"),
+						xml:       opts.Contains("xml"),
 						quoted:    quoted,
 					}
 					field.nameBytes = []byte(field.name)

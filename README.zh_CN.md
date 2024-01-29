@@ -2,7 +2,7 @@
 
 # gamf
 
-基于Go实现的极简AMF编解码库
+极简的，基于Go实现的，AMF序列化/反序列化工具。
 
 # 特性
 
@@ -124,3 +124,4 @@ Unmarshal(bs, &out)
 # 引用
 
 - https://rtmp.veriskope.com/pdf/amf0-file-format-specification.pdf
+- https://rtmp.veriskope.com/pdf/amf3-file-format-spec.pdf

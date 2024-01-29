@@ -1,21 +1,25 @@
 package amf
 
 import (
+	"bytes"
 	"github.com/mitchellh/mapstructure"
 	"github.com/stretchr/testify/require"
 	"testing"
 )
 
-func TestInt(t *testing.T) {
+func TestInt0(t *testing.T) {
+	var bs []byte
+	buf := bytes.NewBuffer(bs)
+
 	in := 1
-	bs, err := Marshal(in)
+	err := NewEncoder(buf).Encode(&in)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
 	var out int
-	err = Unmarshal(bs, &out)
+	err = NewDecoder(buf).Decode(&out)
 	if err != nil {
 		t.Error(err)
 		return
@@ -24,7 +28,28 @@ func TestInt(t *testing.T) {
 	require.Equal(t, in, out)
 }
 
-func TestUInt(t *testing.T) {
+func TestInt3(t *testing.T) {
+	var bs []byte
+	buf := bytes.NewBuffer(bs)
+
+	in := 1
+	err := NewEncoder(buf).WithVersion3().Encode(&in)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	var out int
+	err = NewDecoder(buf).WithVersion3().Decode(&out)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	require.Equal(t, in, out)
+}
+
+func TestUInt0(t *testing.T) {
 	in := uint(1)
 	bs, err := Marshal(in)
 	if err != nil {
@@ -42,7 +67,28 @@ func TestUInt(t *testing.T) {
 	require.Equal(t, in, out)
 }
 
-func TestFloat(t *testing.T) {
+func TestUInt3(t *testing.T) {
+	var bs []byte
+	buf := bytes.NewBuffer(bs)
+
+	in := uint(1)
+	err := NewEncoder(buf).WithVersion3().Encode(&in)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	var out uint
+	err = NewDecoder(buf).WithVersion3().Decode(&out)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	require.Equal(t, in, out)
+}
+
+func TestFloat0(t *testing.T) {
 	in := 1.0
 	bs, err := Marshal(in)
 	if err != nil {
@@ -60,7 +106,28 @@ func TestFloat(t *testing.T) {
 	require.Equal(t, in, out)
 }
 
-func TestString(t *testing.T) {
+func TestFloat3(t *testing.T) {
+	var bs []byte
+	buf := bytes.NewBuffer(bs)
+
+	in := 1.0
+	err := NewEncoder(buf).WithVersion3().Encode(&in)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	var out float64
+	err = NewDecoder(buf).WithVersion3().Decode(&out)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	require.Equal(t, in, out)
+}
+
+func TestString0(t *testing.T) {
 	in := "1"
 	bs, err := Marshal(in)
 	if err != nil {
@@ -78,7 +145,28 @@ func TestString(t *testing.T) {
 	require.Equal(t, in, out)
 }
 
-func TestBool(t *testing.T) {
+func TestString3(t *testing.T) {
+	var bs []byte
+	buf := bytes.NewBuffer(bs)
+
+	in := "1"
+	err := NewEncoder(buf).WithVersion3().Encode(&in)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	var out string
+	err = NewDecoder(buf).WithVersion3().Decode(&out)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	require.Equal(t, in, out)
+}
+
+func TestBool0(t *testing.T) {
 	in := true
 	bs, err := Marshal(&in)
 	if err != nil {
@@ -88,6 +176,27 @@ func TestBool(t *testing.T) {
 
 	out := false
 	err = Unmarshal(bs, &out)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	require.Equal(t, in, out)
+}
+
+func TestBool3(t *testing.T) {
+	var bs []byte
+	buf := bytes.NewBuffer(bs)
+
+	in := true
+	err := NewEncoder(buf).WithVersion3().Encode(&in)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	out := false
+	err = NewDecoder(buf).WithVersion3().Decode(&out)
 	if err != nil {
 		t.Error(err)
 		return
@@ -229,7 +338,7 @@ func TestMap2Struct(t *testing.T) {
 	require.Equal(t, in, out)
 }
 
-func TestSlice(t *testing.T) {
+func TestSlice0(t *testing.T) {
 	in := []interface{}{1.0, "1", true, map[string]interface{}{"Int": 1.0, "String": "1", "Bool": true}}
 	bs, err := Marshal(in)
 	if err != nil {
@@ -239,6 +348,27 @@ func TestSlice(t *testing.T) {
 
 	out := []interface{}{0.0, "0", false, map[string]interface{}{}}
 	err = Unmarshal(bs, &out)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	require.Equal(t, in, out)
+}
+
+func TestSlice3(t *testing.T) {
+	var bs []byte
+	buf := bytes.NewBuffer(bs)
+
+	in := []interface{}{1.0, "1", true, map[string]interface{}{"Int": 1.0, "String": "1", "Bool": true}}
+	err := NewEncoder(buf).WithVersion3().Encode(&in)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	out := []interface{}{0.0, "0", false, map[string]interface{}{}}
+	err = NewDecoder(buf).WithVersion3().Decode(&out)
 	if err != nil {
 		t.Error(err)
 		return

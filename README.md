@@ -2,7 +2,7 @@ English | [中文](README.zh_CN.md)
 
 # gamf
 
-Easiest AMF encoder/decoder for Go.
+A simplest **AMF** serialization and deserialization tool based on Go.
 
 # Features
 
@@ -124,3 +124,4 @@ Unmarshal(bs, &out)
 # Reference
 
 - https://rtmp.veriskope.com/pdf/amf0-file-format-specification.pdf
+- https://rtmp.veriskope.com/pdf/amf3-file-format-spec.pdf
