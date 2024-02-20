@@ -101,7 +101,7 @@ func (dec *Decoder) Decode(v any) error {
 	if err != nil {
 		return err
 	}
-	dec.d.init(dec.buf)
+	dec.d.init(dec.buf, dec.ver3)
 
 	// Don't save err from unmarshal into dec.err:
 	// the connection is still usable since we read a complete AMF

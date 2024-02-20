@@ -68,5 +68,6 @@ const (
 	Int28Min  = -0xfffffff
 
 	UTF8Empty   = 0x01
+	U29NoTraits = 0x0b
 	StringEmpty = ""
 )

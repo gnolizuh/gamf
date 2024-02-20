@@ -121,8 +121,9 @@ func isEmptyValue(v reflect.Value) bool {
 		return v.Float() == 0
 	case reflect.Interface, reflect.Pointer:
 		return v.IsNil()
+	default:
+		return false
 	}
-	return false
 }
 
 func (e *encodeState) reflectValue(v reflect.Value, opts encOpts) {
@@ -137,7 +138,8 @@ type encOpts struct {
 	quoted bool
 }
 
-func (e *encodeState) encodeObjectName(s string) {
+// writeObjectName AMF0 only
+func (e *encodeState) writeObjectName(s string) {
 	e.writeUint(uint16(len(s)))
 	e.Write([]byte(s))
 }
@@ -163,8 +165,9 @@ func (w *reflectWithString) resolve() error {
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
 		w.s = strconv.FormatUint(w.v.Uint(), 10)
 		return nil
+	default:
+		panic("unexpected map key type")
 	}
-	panic("unexpected map key type")
 }
 
 // encodeString encoding rule:
@@ -526,7 +529,7 @@ func (se *structEncoder) encode(e *encodeState, v reflect.Value, opts encOpts) {
 			return
 		}
 		_ = e.strReference.set(v)
-		e.writeMarker(0x0b)
+		e.writeU29(U29NoTraits)
 		e.encodeString(StringEmpty, opts)
 	}
 
@@ -552,7 +555,7 @@ FieldLoop:
 		}
 		opts.quoted = f.quoted
 		if !opts.ver3 {
-			e.encodeObjectName(f.name)
+			e.writeObjectName(f.name)
 		} else {
 			e.encodeString(f.name, opts)
 		}
@@ -565,7 +568,7 @@ FieldLoop:
 
 	// write end marker
 	if !opts.ver3 {
-		e.encodeObjectName(StringEmpty)
+		e.writeObjectName(StringEmpty)
 		e.writeMarker(ObjectEndMarker0)
 	} else {
 		e.encodeString(StringEmpty, opts)
@@ -608,14 +611,14 @@ func (mae *mapEncoder) encode(e *encodeState, v reflect.Value, opts encOpts) {
 			return
 		}
 		_ = e.strReference.set(v)
-		e.writeMarker(0x0b)
+		e.writeU29(U29NoTraits)
 		e.encodeString(StringEmpty, opts)
 	}
 
 	// write object
 	for _, kv := range sv {
 		if !opts.ver3 {
-			e.encodeObjectName(kv.s)
+			e.writeObjectName(kv.s)
 		} else {
 			e.encodeString(kv.s, opts)
 		}
@@ -624,7 +627,7 @@ func (mae *mapEncoder) encode(e *encodeState, v reflect.Value, opts encOpts) {
 
 	// write end marker
 	if !opts.ver3 {
-		e.encodeObjectName(StringEmpty)
+		e.writeObjectName(StringEmpty)
 		e.writeMarker(ObjectEndMarker0)
 	} else {
 		e.encodeString(StringEmpty, opts)
@@ -636,11 +639,11 @@ func newMapEncoder(t reflect.Type) encoderFunc {
 	case reflect.String,
 		reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		mae := &mapEncoder{elemEnc: typeEncoder(t.Elem())}
+		return mae.encode
 	default:
 		return unsupportedTypeEncoder
 	}
-	mae := &mapEncoder{elemEnc: typeEncoder(t.Elem())}
-	return mae.encode
 }
 
 func encodeXML(e *encodeState, v reflect.Value, opts encOpts) {
@@ -714,7 +717,7 @@ func (ae *arrayEncoder) encode(e *encodeState, v reflect.Value, opts encOpts) {
 		}
 		_ = e.strReference.set(v)
 		e.writeU29((uint32(v.Len()) << 1) | 1)
-		e.WriteByte(UTF8Empty)
+		e.WriteByte(UTF8Empty) // no assoc-value field supported, followed by value-types.
 	}
 
 	for i := 0; i < v.Len(); i++ {
@@ -936,6 +939,8 @@ func typeFields(t reflect.Type) structFields {
 						reflect.Float32, reflect.Float64,
 						reflect.String:
 						quoted = true
+					default:
+						// do nothing.
 					}
 				}
 
