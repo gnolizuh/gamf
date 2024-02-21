@@ -50,7 +50,7 @@ func (enc *Encoder) WithVersion(v Version) *Encoder {
 //
 // See the documentation for Marshal for details about the
 // conversion of Go values to AMF.
-func (enc *Encoder) Encode(v any) error {
+func (enc *Encoder) Encode(vs ...any) error {
 	if enc.err != nil {
 		return enc.err
 	}
@@ -62,14 +62,18 @@ func (enc *Encoder) Encode(v any) error {
 	e := newEncodeState()
 	defer encodeStatePool.Put(e)
 
-	err := e.marshal(v, encOpts{v3: enc.v3})
-	if err != nil {
-		return err
-	}
+	var err error
+	for _, v := range vs {
+		err := e.marshal(v, encOpts{v3: enc.v3})
+		if err != nil {
+			return err
+		}
 
-	b := e.Bytes()
-	if _, err = enc.w.Write(b); err != nil {
-		enc.err = err
+		b := e.Bytes()
+		if _, err = enc.w.Write(b); err != nil {
+			enc.err = err
+			return err
+		}
 	}
 	return err
 }
@@ -108,7 +112,7 @@ func (dec *Decoder) WithVersion(v Version) *Decoder {
 //
 // See the documentation for Unmarshal for details about
 // the conversion of AMF into a Go value.
-func (dec *Decoder) Decode(v any) error {
+func (dec *Decoder) Decode(vs ...any) error {
 	if dec.err != nil {
 		return dec.err
 	}
@@ -127,5 +131,11 @@ func (dec *Decoder) Decode(v any) error {
 	// Don't save err from unmarshal into dec.err:
 	// the connection is still usable since we read a complete AMF
 	// object from it before the error happened.
-	return dec.d.unmarshal(v, decOpts{v3: dec.v3})
+	for _, v := range vs {
+		if err = dec.d.unmarshal(v, decOpts{v3: dec.v3}); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

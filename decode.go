@@ -80,18 +80,18 @@ type errorContext struct {
 // Reference AMF3 only, which be used to save a string or an object to Reference.
 type Reference struct {
 	// map be used to locate index by reference value.
-	m map[interface{}]int
+	m map[any]int
 
 	// array be used to search by reference index.
-	a []interface{}
+	a []any
 }
 
 func (r *Reference) reset() {
-	r.m = make(map[interface{}]int)
-	r.a = make([]interface{}, 0)
+	r.m = make(map[any]int)
+	r.a = make([]any, 0)
 }
 
-func (r *Reference) set(v interface{}) error {
+func (r *Reference) set(v any) error {
 	if _, ok := r.m[v]; ok {
 		return errors.New("set value to reference failed, conflict happened")
 	}
@@ -100,12 +100,12 @@ func (r *Reference) set(v interface{}) error {
 	return nil
 }
 
-func (r *Reference) get(v interface{}) (int, bool) {
+func (r *Reference) get(v any) (int, bool) {
 	i, ok := r.m[v]
 	return i, ok
 }
 
-func (r *Reference) locate(i int) (interface{}, bool) {
+func (r *Reference) locate(i int) (any, bool) {
 	if i < len(r.a) {
 		return r.a[i], true
 	}
@@ -132,8 +132,8 @@ func (d *decodeState) init(data []byte, v3 bool) *decodeState {
 	d.v3 = v3
 	d.data = data
 	d.reader = bytes.NewReader(data)
-	d.strReference = Reference{m: make(map[interface{}]int), a: make([]interface{}, 0)}
-	d.objReference = Reference{m: make(map[interface{}]int), a: make([]interface{}, 0)}
+	d.strReference = Reference{m: make(map[any]int), a: make([]any, 0)}
+	d.objReference = Reference{m: make(map[any]int), a: make([]any, 0)}
 	return d
 }
 
@@ -189,7 +189,7 @@ func indirect(v reflect.Value) (Unmarshaler, reflect.Value) {
 		}
 
 		// Prevent infinite loop if v is an interface pointing to its own address:
-		//     var v interface{}
+		//     var v any
 		//     v = &v
 		if v.Elem().Kind() == reflect.Interface && v.Elem().Elem() == v {
 			v = v.Elem()
@@ -218,7 +218,7 @@ func (d *decodeState) error(err error) {
 	panic(err)
 }
 
-func (d *decodeState) numberInterface() interface{} {
+func (d *decodeState) numberInterface() any {
 	if d.v3 {
 		return nil
 	}
@@ -235,7 +235,7 @@ func (d *decodeState) number(v reflect.Value, _ decOpts) error {
 	return d.reflectFloat64(f, v)
 }
 
-func (d *decodeState) integerInterface() interface{} {
+func (d *decodeState) integerInterface() any {
 	if !d.v3 {
 		return nil
 	}
@@ -274,7 +274,7 @@ func (d *decodeState) integer(v reflect.Value, _ decOpts) error {
 	return nil
 }
 
-func (d *decodeState) doubleInterface() interface{} {
+func (d *decodeState) doubleInterface() any {
 	if !d.v3 {
 		return nil
 	}
@@ -291,7 +291,7 @@ func (d *decodeState) double(v reflect.Value, _ decOpts) error {
 	return d.reflectFloat64(f, v)
 }
 
-func (d *decodeState) boolInterface(m byte) interface{} {
+func (d *decodeState) boolInterface(m byte) any {
 	b := false
 	if !d.v3 {
 		b = d.readByte() != 0
@@ -374,7 +374,7 @@ func (d *decodeState) readString() ([]byte, error) {
 	return bs, nil
 }
 
-func (d *decodeState) stringInterface() interface{} {
+func (d *decodeState) stringInterface() any {
 	bs, err := d.readString()
 	if err != nil {
 		d.error(err)
@@ -411,8 +411,8 @@ func (d *decodeState) string(v reflect.Value, _ decOpts) error {
 }
 
 // object0Interface AMF0 only.
-func (d *decodeState) object0Interface() interface{} {
-	m := make(map[string]interface{})
+func (d *decodeState) object0Interface() any {
+	m := make(map[string]any)
 	for {
 		on, err := d.readObjectName()
 		if err != nil {
@@ -441,7 +441,7 @@ func (d *decodeState) object0Interface() interface{} {
 }
 
 // object3Interface AMF0 only.
-func (d *decodeState) object3Interface() interface{} {
+func (d *decodeState) object3Interface() any {
 	if !d.v3 {
 		return nil
 	}
@@ -469,7 +469,7 @@ func (d *decodeState) object3Interface() interface{} {
 		d.error(errors.New("unsupported type: traits object"))
 	}
 
-	m := make(map[string]interface{})
+	m := make(map[string]any)
 	for {
 		on, err := d.decodeString()
 		if err != nil {
@@ -497,7 +497,7 @@ func (d *decodeState) object(v reflect.Value, opts decOpts) error {
 
 	// Decoding into nil interface? Switch to non-reflect code.
 	if v.Kind() == reflect.Interface && v.NumMethod() == 0 {
-		var oi interface{}
+		var oi any
 		if !opts.v3 {
 			oi = d.object0Interface()
 		} else {
@@ -698,7 +698,7 @@ func (d *decodeState) object(v reflect.Value, opts decOpts) error {
 	return nil
 }
 
-func (d *decodeState) nullInterface() interface{} {
+func (d *decodeState) nullInterface() any {
 	return nil
 }
 
@@ -719,11 +719,11 @@ func (d *decodeState) null(v reflect.Value, _ decOpts) error {
 	}
 }
 
-func (d *decodeState) arrayNullInterface() interface{} {
+func (d *decodeState) arrayNullInterface() any {
 	return nil
 }
 
-func (d *decodeState) undefinedInterface() interface{} {
+func (d *decodeState) undefinedInterface() any {
 	return nil
 }
 
@@ -734,7 +734,7 @@ func (d *decodeState) undefined(_ reflect.Value, _ decOpts) error {
 	return nil
 }
 
-func (d *decodeState) ecmaArrayInterface() interface{} {
+func (d *decodeState) ecmaArrayInterface() any {
 	_ = d.readUInt32()
 	return d.object0Interface()
 }
@@ -750,7 +750,7 @@ func (d *decodeState) ecmaArray(v reflect.Value, opts decOpts) error {
 	return d.object(v, opts)
 }
 
-func (d *decodeState) byteArrayInterface() interface{} {
+func (d *decodeState) byteArrayInterface() any {
 	if !d.v3 {
 		return nil
 	}
@@ -829,9 +829,9 @@ func (d *decodeState) byteArray(v reflect.Value, opts decOpts) error {
 	return nil
 }
 
-func (d *decodeState) strictArrayInterface() interface{} {
+func (d *decodeState) strictArrayInterface() any {
 	u := d.readUInt32()
-	var v = make([]interface{}, 0)
+	var v = make([]any, 0)
 	for i := uint32(0); i < u; i++ {
 		v = append(v, d.valueInterface())
 	}
@@ -897,7 +897,7 @@ func (d *decodeState) strictArray(v reflect.Value, opts decOpts) error {
 	return nil
 }
 
-// arrayInterface is like array but returns []interface{}.
+// arrayInterface is like array but returns []any.
 func (d *decodeState) arrayInterface(n uint32) []any {
 	var v = make([]any, 0)
 	for i := uint32(0); i < n; i++ {
@@ -908,7 +908,7 @@ func (d *decodeState) arrayInterface(n uint32) []any {
 
 // array AMF3 only
 func (d *decodeState) array(v reflect.Value, opts decOpts) error {
-	var _ []interface{}
+	var _ []any
 	ui := d.readU29()
 	if (ui & 0x01) == 0 {
 		vb, ok := d.objReference.locate(int(ui >> 1))
@@ -943,7 +943,7 @@ func (d *decodeState) array(v reflect.Value, opts decOpts) error {
 	return nil
 }
 
-func (d *decodeState) dateInterface() interface{} {
+func (d *decodeState) dateInterface() any {
 	var f float64
 	err := binary.Read(d.reader, binary.BigEndian, &f)
 	if err != nil {
@@ -996,7 +996,7 @@ func (d *decodeState) date(v reflect.Value, opts decOpts) error {
 	return nil
 }
 
-func (d *decodeState) longStringInterface() interface{} {
+func (d *decodeState) longStringInterface() any {
 	s := make([]byte, d.readUInt32())
 	_, err := d.reader.Read(s)
 	if err != nil {
@@ -1036,7 +1036,7 @@ func (d *decodeState) longString(v reflect.Value, _ decOpts) error {
 	return nil
 }
 
-func (d *decodeState) unsupportedInterface() interface{} {
+func (d *decodeState) unsupportedInterface() any {
 	return nil
 }
 
@@ -1044,7 +1044,7 @@ func (d *decodeState) unsupported(_ reflect.Value, _ decOpts) error {
 	return nil
 }
 
-func (d *decodeState) xmlDocumentInterface() interface{} {
+func (d *decodeState) xmlDocumentInterface() any {
 	return d.longStringInterface()
 }
 
@@ -1064,7 +1064,7 @@ func (d *decodeState) xml(v reflect.Value, opts decOpts) error {
 	}
 }
 
-func (d *decodeState) value0Interface(m byte) interface{} {
+func (d *decodeState) value0Interface(m byte) any {
 	switch m {
 	default:
 		d.error(errors.New("decode amf0: unexpected marker type"))
@@ -1104,7 +1104,7 @@ func (d *decodeState) value0Interface(m byte) interface{} {
 	return nil
 }
 
-func (d *decodeState) value3Interface(m byte) interface{} {
+func (d *decodeState) value3Interface(m byte) any {
 	switch m {
 	default:
 		d.error(errors.New("decode amf3: unexpected marker type"))
@@ -1136,7 +1136,7 @@ func (d *decodeState) value3Interface(m byte) interface{} {
 	return nil
 }
 
-func (d *decodeState) valueInterface() interface{} {
+func (d *decodeState) valueInterface() any {
 	m, err := d.readMarker()
 	if err != nil {
 		d.error(errors.New("failed to read marker, error: " + err.Error()))
@@ -1365,10 +1365,15 @@ func (d *decodeState) readObjectName() ([]byte, error) {
 	return on, nil
 }
 
-func Unmarshal(data []byte, v interface{}) error {
+func Unmarshal(data []byte, vs ...any) error {
 	var d decodeState
 	d.init(data, false)
-	return d.unmarshal(v, decOpts{})
+	for _, v := range vs {
+		if err := d.unmarshal(v, decOpts{}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // An InvalidUnmarshalError describes an invalid argument passed to Unmarshal.
@@ -1388,7 +1393,7 @@ func (e *InvalidUnmarshalError) Error() string {
 	return "amf: Unmarshal(nil " + e.Type.String() + ")"
 }
 
-func (d *decodeState) unmarshal(v interface{}, opts decOpts) error {
+func (d *decodeState) unmarshal(v any, opts decOpts) error {
 	rv := reflect.ValueOf(v)
 	if rv.Kind() != reflect.Pointer || rv.IsNil() {
 		return &InvalidUnmarshalError{reflect.TypeOf(v)}

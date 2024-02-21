@@ -78,8 +78,8 @@ func newEncodeState() *encodeState {
 		return e
 	}
 	return &encodeState{
-		strReference: Reference{m: make(map[interface{}]int), a: make([]interface{}, 0)},
-		objReference: Reference{m: make(map[interface{}]int), a: make([]interface{}, 0)},
+		strReference: Reference{m: make(map[any]int), a: make([]any, 0)},
+		objReference: Reference{m: make(map[any]int), a: make([]any, 0)},
 	}
 }
 
@@ -88,7 +88,7 @@ func newEncodeState() *encodeState {
 // can distinguish intentional panics from this package.
 type amfError struct{ error }
 
-func (e *encodeState) marshal(v interface{}, opts encOpts) (err error) {
+func (e *encodeState) marshal(v any, opts encOpts) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			if _, ok := r.(runtime.Error); ok {
@@ -209,7 +209,7 @@ func (e *encodeState) encodeString(s string, opts encOpts) {
 	}
 }
 
-func (e *encodeState) writeUint(u interface{}) {
+func (e *encodeState) writeUint(u any) {
 	_ = binary.Write(e, binary.BigEndian, u)
 }
 
@@ -817,15 +817,18 @@ func (e *UnsupportedTypeError) Error() string {
 // AMF cannot represent cyclic data structures and Marshal does not
 // handle them. Passing cyclic structures to Marshal will result in
 // an error.
-func Marshal(v any) ([]byte, error) {
+func Marshal(vs ...any) ([]byte, error) {
 	e := newEncodeState()
 	defer encodeStatePool.Put(e)
 
-	err := e.marshal(v, encOpts{})
-	if err != nil {
-		return nil, err
+	var b []byte
+	for _, v := range vs {
+		err := e.marshal(v, encOpts{})
+		if err != nil {
+			return nil, err
+		}
+		b = append(b, e.Bytes()...)
 	}
-	b := append([]byte(nil), e.Bytes()...)
 
 	return b, nil
 }

@@ -263,7 +263,7 @@ func TestStruct2Map(t *testing.T) {
 		return
 	}
 
-	m := make(map[string]interface{})
+	m := make(map[string]any)
 	err = Unmarshal(bs, &m)
 	if err != nil {
 		t.Error(err)
@@ -299,11 +299,11 @@ func TestMap2Struct(t *testing.T) {
 		} `amf:"tag_object"`
 	}
 
-	m := map[string]interface{}{
+	m := map[string]any{
 		"tag_int":    1,
 		"tag_string": "1",
 		"tag_bool":   true,
-		"tag_object": map[string]interface{}{
+		"tag_object": map[string]any{
 			"tag_int":    1,
 			"tag_string": "1",
 			"tag_bool":   true,
@@ -339,14 +339,14 @@ func TestMap2Struct(t *testing.T) {
 }
 
 func TestSlice0(t *testing.T) {
-	in := []interface{}{1.0, "1", true, map[string]interface{}{"Int": 1.0, "String": "1", "Bool": true}}
+	in := []any{1.0, "1", true, map[string]any{"Int": 1.0, "String": "1", "Bool": true}}
 	bs, err := Marshal(in)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	out := []interface{}{0.0, "0", false, map[string]interface{}{}}
+	out := []any{0.0, "0", false, map[string]any{}}
 	err = Unmarshal(bs, &out)
 	if err != nil {
 		t.Error(err)
@@ -360,14 +360,14 @@ func TestSlice3(t *testing.T) {
 	var bs []byte
 	buf := bytes.NewBuffer(bs)
 
-	in := []interface{}{1.0, "1", true, map[string]interface{}{"Int": 1.0, "String": "1", "Bool": true}}
+	in := []any{1.0, "1", true, map[string]any{"Int": 1.0, "String": "1", "Bool": true}}
 	err := NewEncoder().WithWriter(buf).WithVersion(Version3).Encode(&in)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	out := []interface{}{0.0, "0", false, map[string]interface{}{}}
+	out := []any{0.0, "0", false, map[string]any{}}
 	err = NewDecoder().WithReader(buf).WithVersion(Version3).Decode(&out)
 	if err != nil {
 		t.Error(err)

@@ -136,10 +136,10 @@ Unmarshal(bs, &out)
 var bs []byte
 buf := bytes.NewBuffer(bs)
 
-in := []interface{}{1.0, "1", true, map[string]interface{}{"Int": 1.0, "String": "1", "Bool": true}}
+in := []any{1.0, "1", true, map[string]any{"Int": 1.0, "String": "1", "Bool": true}}
 NewEncoder().WithWriter(buf).WithVersion(Version3).Encode(&in)
 
-out := []interface{}{0.0, "0", false, map[string]interface{}{}}
+out := []any{0.0, "0", false, map[string]any{}}
 NewDecoder().WithReader(buf).WithVersion(Version3).Decode(&out)
 ```
 
@@ -183,17 +183,17 @@ type Struct struct {
 in := Struct{} // with value be initialized
 bs, _ := Marshal(&in)
 
-out := make(map[string]interface{})
+out := make(map[string]any)
 Unmarshal(bs, &out)
 ```
 
 ## Map
 
 ```
-in := map[string]interface{}{"Int": 1.0, "String": "1", "Bool": true}
+in := map[string]any{"Int": 1.0, "String": "1", "Bool": true}
 bs, _ := Marshal(&in)
 
-out := make(map[string]interface{})
+out := make(map[string]any)
 Unmarshal(bs, &out)
 ```
 
