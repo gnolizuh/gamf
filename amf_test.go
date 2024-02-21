@@ -2,7 +2,6 @@ package amf
 
 import (
 	"bytes"
-	"fmt"
 	"github.com/mitchellh/mapstructure"
 	"github.com/stretchr/testify/require"
 	"testing"
@@ -367,8 +366,6 @@ func TestSlice3(t *testing.T) {
 		t.Error(err)
 		return
 	}
-
-	fmt.Println(buf.Bytes())
 
 	out := []interface{}{0.0, "0", false, map[string]interface{}{}}
 	err = NewDecoder(buf).WithVersion3().Decode(&out)

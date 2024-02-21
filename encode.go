@@ -63,12 +63,18 @@ type encodeState struct {
 	objReference Reference
 }
 
+func (e *encodeState) ResetState() {
+	e.Reset()
+	e.strReference.reset()
+	e.objReference.reset()
+}
+
 var encodeStatePool sync.Pool
 
 func newEncodeState() *encodeState {
 	if v := encodeStatePool.Get(); v != nil {
 		e := v.(*encodeState)
-		e.Reset()
+		e.ResetState()
 		return e
 	}
 	return &encodeState{
@@ -198,9 +204,7 @@ func (e *encodeState) encodeString(s string, opts encOpts) {
 		}
 		l := len(s)
 		e.writeU29(uint32((l << 1) | 1))
-		if l > 0 {
-			_ = e.strReference.set(s)
-		}
+		_ = e.strReference.set(s)
 		e.Write([]byte(s))
 	}
 }
@@ -306,12 +310,12 @@ func (e *encodeState) encodeDate(v reflect.Value, opts encOpts) {
 		_ = binary.Write(e, binary.BigEndian, 0x0000) // time-zone
 	} else {
 		e.writeMarker(DateMarker3)
-		i, ok := e.strReference.get(v)
+		i, ok := e.objReference.get(v)
 		if ok {
 			e.writeU29(uint32(i << 1))
 			return
 		}
-		_ = e.strReference.set(v)
+		_ = e.objReference.set(v)
 		e.writeU29(uint32(0x01))
 		e.writeUint(t.UnixMilli())
 	}
@@ -523,12 +527,12 @@ func (se *structEncoder) encode(e *encodeState, v reflect.Value, opts encOpts) {
 		e.writeMarker(ObjectMarker0)
 	} else {
 		e.writeMarker(ObjectMarker3)
-		i, ok := e.strReference.get(v)
+		i, ok := e.objReference.get(v)
 		if ok {
 			e.writeU29(uint32(i << 1))
 			return
 		}
-		_ = e.strReference.set(v)
+		_ = e.objReference.set(v)
 		e.writeU29(U29NoTraits)
 		e.encodeString(StringEmpty, opts)
 	}
@@ -605,12 +609,12 @@ func (mae *mapEncoder) encode(e *encodeState, v reflect.Value, opts encOpts) {
 		e.writeMarker(ObjectMarker0)
 	} else {
 		e.writeMarker(ObjectMarker3)
-		i, ok := e.strReference.get(v)
+		i, ok := e.objReference.get(v)
 		if ok {
 			e.writeU29(uint32(i << 1))
 			return
 		}
-		_ = e.strReference.set(v)
+		_ = e.objReference.set(v)
 		e.writeU29(U29NoTraits)
 		e.encodeString(StringEmpty, opts)
 	}
@@ -659,12 +663,12 @@ func encodeXML(e *encodeState, v reflect.Value, opts encOpts) {
 		e.WriteString(s)
 	} else {
 		e.writeMarker(XMLDocMarker3)
-		i, ok := e.strReference.get(v)
+		i, ok := e.objReference.get(v)
 		if ok {
 			e.writeU29(uint32(i << 1))
 			return
 		}
-		_ = e.strReference.set(v)
+		_ = e.objReference.set(v)
 		e.writeU29(uint32((i << 1) | 1))
 		e.WriteString(s)
 	}
@@ -710,12 +714,12 @@ func (ae *arrayEncoder) encode(e *encodeState, v reflect.Value, opts encOpts) {
 		e.writeUint(uint32(v.Len()))
 	} else {
 		e.writeMarker(ArrayMarker3)
-		i, ok := e.strReference.get(v)
+		i, ok := e.objReference.get(v)
 		if ok {
 			e.writeU29(uint32(i << 1))
 			return
 		}
-		_ = e.strReference.set(v)
+		_ = e.objReference.set(v)
 		e.writeU29((uint32(v.Len()) << 1) | 1)
 		e.WriteByte(UTF8Empty) // no assoc-value field supported, followed by value-types.
 	}

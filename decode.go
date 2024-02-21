@@ -86,12 +86,17 @@ type Reference struct {
 	a []interface{}
 }
 
+func (r *Reference) reset() {
+	r.m = make(map[interface{}]int)
+	r.a = make([]interface{}, 0)
+}
+
 func (r *Reference) set(v interface{}) error {
 	if _, ok := r.m[v]; ok {
 		return errors.New("set value to reference failed, conflict happened")
 	}
 	r.a = append(r.a, v)
-	r.m[v] = len(r.a)
+	r.m[v] = len(r.a) - 1
 	return nil
 }
 
@@ -128,6 +133,7 @@ func (d *decodeState) init(data []byte, ver3 bool) *decodeState {
 	d.data = data
 	d.reader = bytes.NewReader(data)
 	d.strReference = Reference{m: make(map[interface{}]int), a: make([]interface{}, 0)}
+	d.objReference = Reference{m: make(map[interface{}]int), a: make([]interface{}, 0)}
 	return d
 }
 
@@ -349,24 +355,20 @@ func (d *decodeState) readString() ([]byte, error) {
 	} else {
 		ui := d.readU29()
 		if (ui & 0x01) == 0 {
-			ui >>= 1
-			vb, ok := d.strReference.locate(int(ui))
+			vb, ok := d.strReference.locate(int(ui >> 1))
 			if !ok {
 				e := errors.New("locate to reference failed")
 				return bs, e
 			}
 			bs = []byte(vb.(string)) // MUST be []byte
 		} else {
-			ui >>= 1
-			s := make([]byte, ui)
+			s := make([]byte, ui>>1)
 			_, err := d.reader.Read(s)
 			if err != nil {
 				return bs, err
 			}
 			bs = s
-			if err := d.strReference.set(string(bs)); err != nil {
-				return bs, err
-			}
+			_ = d.strReference.set(string(bs))
 		}
 	}
 	return bs, nil
@@ -378,7 +380,7 @@ func (d *decodeState) stringInterface() interface{} {
 		d.error(err)
 		return bs
 	}
-	return bs
+	return string(bs)
 }
 
 func (d *decodeState) string(v reflect.Value, _ decOpts) error {
@@ -386,7 +388,7 @@ func (d *decodeState) string(v reflect.Value, _ decOpts) error {
 	if x == nil {
 		return errors.New("decode string failed")
 	}
-	bs := x.([]byte)
+	bs := []byte(x.(string))
 	switch v.Kind() {
 	default:
 		return errors.New("unexpected type: " + v.Type().String() + " decoding string")
@@ -446,8 +448,7 @@ func (d *decodeState) object3Interface() interface{} {
 
 	ui := d.readU29()
 	if (ui & 0x01) == 0 {
-		ui >>= 1
-		vb, ok := d.objReference.locate(int(ui))
+		vb, ok := d.objReference.locate(int(ui >> 1))
 		if !ok {
 			d.error(errors.New("locate to reference failed"))
 		}
@@ -479,12 +480,12 @@ func (d *decodeState) object3Interface() interface{} {
 			m[string(on)] = d.valueInterface()
 		} else {
 			// end of empty string.
-			if err := d.objReference.set(m); err != nil {
-				d.error(err)
-			}
-			return m
+			break
 		}
 	}
+
+	_ = d.objReference.set(reflect.ValueOf(m))
+	return m
 }
 
 // marker: 1 byte 0x03
@@ -545,8 +546,7 @@ func (d *decodeState) object(v reflect.Value, opts decOpts) error {
 	if opts.ver3 {
 		ui := d.readU29()
 		if (ui & 0x01) == 0 {
-			ui >>= 1
-			vb, ok := d.objReference.locate(int(ui))
+			vb, ok := d.objReference.locate(int(ui >> 1))
 			if !ok {
 				e := errors.New("locate to reference failed")
 				d.error(e)
@@ -750,6 +750,85 @@ func (d *decodeState) ecmaArray(v reflect.Value, opts decOpts) error {
 	return d.object(v, opts)
 }
 
+func (d *decodeState) byteArrayInterface() interface{} {
+	if !d.ver3 {
+		return nil
+	}
+
+	ui := d.readU29()
+	if (ui & 0x01) == 0 {
+		ba, ok := d.objReference.locate(int(ui >> 1))
+		if !ok {
+			d.error(errors.New("locate to reference failed"))
+		}
+		return ba
+	} else {
+		ba := make([]byte, ui>>1)
+		_, err := d.reader.Read(ba)
+		if err != nil {
+			d.error(err)
+			return nil
+		}
+		_ = d.objReference.set(ba)
+		return ba
+	}
+}
+
+func (d *decodeState) byteArray(v reflect.Value, opts decOpts) error {
+	x := d.byteArrayInterface()
+	if x == nil {
+		return nil
+	}
+
+	ba := x.([]byte)
+	switch v.Kind() {
+	default:
+		d.saveError(&UnmarshalTypeError{Value: "array", Type: v.Type(), Offset: int64(d.reader.Len())})
+		return nil
+	case reflect.Array, reflect.Slice:
+		break
+	}
+
+	i := 0
+	for ; i < len(ba); i++ {
+		// Expand slice length, growing the slice if necessary.
+		if v.Kind() == reflect.Slice {
+			if i >= v.Cap() {
+				v.Grow(1)
+			}
+			if i >= v.Len() {
+				v.SetLen(i + 1)
+			}
+		}
+
+		if i < v.Len() {
+			// Decode into element.
+			if err := d.value(v.Index(i), opts); err != nil {
+				return err
+			}
+		} else {
+			// Ran out of fixed array: skip.
+			if err := d.value(reflect.Value{}, opts); err != nil {
+				return err
+			}
+		}
+	}
+
+	if i < v.Len() {
+		if v.Kind() == reflect.Array {
+			for ; i < v.Len(); i++ {
+				v.Index(i).SetZero() // zero remainder of array
+			}
+		} else {
+			v.SetLen(i) // truncate the slice
+		}
+	}
+	if i == 0 && v.Kind() == reflect.Slice {
+		v.Set(reflect.MakeSlice(v.Type(), 0, 0))
+	}
+	return nil
+}
+
 func (d *decodeState) strictArrayInterface() interface{} {
 	u := d.readUInt32()
 	var v = make([]interface{}, 0)
@@ -832,14 +911,12 @@ func (d *decodeState) array(v reflect.Value, opts decOpts) error {
 	var _ []interface{}
 	ui := d.readU29()
 	if (ui & 0x01) == 0 {
-		ui >>= 1
-		vb, ok := d.objReference.locate(int(ui))
+		vb, ok := d.objReference.locate(int(ui >> 1))
 		if !ok {
 			return errors.New("locate to reference failed")
 		}
-		_ = vb.([]interface{}) // MUST be []interface{}
+		v.Set(reflect.ValueOf(vb))
 	} else {
-		ui >>= 1
 		i := 0
 		for {
 			b := d.readByte()
@@ -893,7 +970,7 @@ func (d *decodeState) date(v reflect.Value, opts decOpts) error {
 	var t time.Time
 	ui := d.readU29()
 	if (ui & 0x01) == 0 {
-		vb, ok := d.objReference.locate(int(ui))
+		vb, ok := d.objReference.locate(int(ui >> 1))
 		if !ok {
 			return errors.New("locate to reference failed")
 		}
@@ -906,9 +983,7 @@ func (d *decodeState) date(v reflect.Value, opts decOpts) error {
 		}
 
 		t = time.Unix(0, int64(f)*int64(time.Millisecond))
-		if err := d.objReference.set(t); err != nil {
-			return err
-		}
+		_ = d.objReference.set(t)
 	}
 
 	switch v.Interface().(type) {
@@ -1033,40 +1108,30 @@ func (d *decodeState) value3Interface(m byte) interface{} {
 	switch m {
 	default:
 		d.error(errors.New("decode amf3: unexpected marker type"))
-	case UndefinedMarker3: // ok
+	case UndefinedMarker3:
 		return d.undefinedInterface()
-	case NullMarker3: // ok
+	case NullMarker3:
 		return d.nullInterface()
-	case FalseMarker3, TrueMarker3: // ok
+	case FalseMarker3, TrueMarker3:
 		return d.boolInterface(m)
-	case IntegerMarker3: // ok
+	case IntegerMarker3:
 		return d.integerInterface()
-	case DoubleMarker3: // ok
+	case DoubleMarker3:
 		return d.doubleInterface()
-	case StringMarker3: // ok
+	case StringMarker3:
 		return d.stringInterface()
-	case XMLDocMarker3: // ok
+	case XMLDocMarker3:
 		return d.xmlDocumentInterface()
-	case DateMarker3: // ok
+	case DateMarker3:
 		return d.dateInterface()
-	case ArrayMarker3: // ok
+	case ArrayMarker3:
 		return d.arrayInterface(0)
 	case ObjectMarker3:
 		return d.object3Interface()
 	case XMLMarker3:
-		return d.xmlDocumentInterface() // ok
+		return d.xmlDocumentInterface()
 	case ByteArrayMarker3:
-		return d.ecmaArrayInterface()
-	case VectorIntMarker3:
-		return d.unsupportedInterface()
-	case VectorUIntMarker3:
-		return d.unsupportedInterface()
-	case VectorDoubleMarker3:
-		return d.unsupportedInterface()
-	case VectorObjectMarker3:
-		return d.unsupportedInterface()
-	case DictionaryMarker3:
-		return d.unsupportedInterface()
+		return d.byteArrayInterface()
 	}
 	return nil
 }
@@ -1157,40 +1222,30 @@ func (d *decodeState) value3(m byte, v reflect.Value, opts decOpts) error {
 	switch m {
 	default:
 		return errors.New("decode amf3: unexpected marker type")
-	case UndefinedMarker3: // ok
+	case UndefinedMarker3:
 		return d.undefined(v, opts)
-	case NullMarker3: // ok
+	case NullMarker3:
 		return d.null(v, opts)
-	case FalseMarker3, TrueMarker3: // ok
+	case FalseMarker3, TrueMarker3:
 		return d.bool(m, v, opts)
-	case IntegerMarker3: // ok
+	case IntegerMarker3:
 		return d.integer(v, opts)
-	case DoubleMarker3: // ok
+	case DoubleMarker3:
 		return d.double(v, opts)
-	case StringMarker3: // ok
+	case StringMarker3:
 		return d.string(v, opts)
-	case XMLDocMarker3: // ok
+	case XMLDocMarker3:
 		return d.xmlDocument(v, opts)
-	case DateMarker3: // ok
+	case DateMarker3:
 		return d.date(v, opts)
-	case ArrayMarker3: // ok
+	case ArrayMarker3:
 		return d.array(v, opts)
 	case ObjectMarker3:
 		return d.object(v, opts)
 	case XMLMarker3:
-		return d.xml(v, opts) // ok
+		return d.xml(v, opts)
 	case ByteArrayMarker3:
-		return d.ecmaArray(v, opts)
-	case VectorIntMarker3:
-		return d.unsupported(v, opts)
-	case VectorUIntMarker3:
-		return d.unsupported(v, opts)
-	case VectorDoubleMarker3:
-		return d.unsupported(v, opts)
-	case VectorObjectMarker3:
-		return d.unsupported(v, opts)
-	case DictionaryMarker3:
-		return d.unsupported(v, opts)
+		return d.byteArray(v, opts)
 	}
 }
 
@@ -1228,24 +1283,20 @@ func (d *decodeState) readUTF8vr() []byte {
 	var bs []byte
 	ui := d.readU29()
 	if (ui & 0x01) == 0 {
-		ui >>= 1
-		vb, ok := d.strReference.locate(int(ui))
+		vb, ok := d.strReference.locate(int(ui >> 1))
 		if !ok {
 			d.error(errors.New("locate to reference failed"))
 		}
 		bs = vb.([]byte) // MUST be []byte
 	} else {
-		ui >>= 1
-		s := make([]byte, ui)
+		s := make([]byte, ui>>1)
 		_, err := d.reader.Read(s)
 		if err != nil {
 			d.error(err)
 		}
 
 		bs = s
-		if err := d.strReference.set(string(s)); err != nil {
-			d.error(err)
-		}
+		_ = d.strReference.set(string(s))
 	}
 	return bs
 }
