@@ -9,18 +9,16 @@ import (
 func TestStream(t *testing.T) {
 	var bs []byte
 	buf := bytes.NewBuffer(bs)
-	e := NewEncoder(buf)
 
 	in := 1
-	err := e.Encode(&in)
+	err := NewEncoder().WithWriter(buf).Encode(&in)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
 	var out int
-	d := NewDecoder(buf)
-	err = d.Decode(&out)
+	err = NewDecoder().WithReader(buf).Decode(&out)
 	if err != nil {
 		t.Error(err)
 		return

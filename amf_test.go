@@ -12,14 +12,14 @@ func TestInt0(t *testing.T) {
 	buf := bytes.NewBuffer(bs)
 
 	in := 1
-	err := NewEncoder(buf).Encode(&in)
+	err := NewEncoder().WithWriter(buf).Encode(&in)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
 	var out int
-	err = NewDecoder(buf).Decode(&out)
+	err = NewDecoder().WithReader(buf).Decode(&out)
 	if err != nil {
 		t.Error(err)
 		return
@@ -33,14 +33,14 @@ func TestInt3(t *testing.T) {
 	buf := bytes.NewBuffer(bs)
 
 	in := 1
-	err := NewEncoder(buf).WithVersion3().Encode(&in)
+	err := NewEncoder().WithWriter(buf).WithVersion(Version3).Encode(&in)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
 	var out int
-	err = NewDecoder(buf).WithVersion3().Decode(&out)
+	err = NewDecoder().WithReader(buf).WithVersion(Version3).Decode(&out)
 	if err != nil {
 		t.Error(err)
 		return
@@ -72,14 +72,14 @@ func TestUInt3(t *testing.T) {
 	buf := bytes.NewBuffer(bs)
 
 	in := uint(1)
-	err := NewEncoder(buf).WithVersion3().Encode(&in)
+	err := NewEncoder().WithWriter(buf).WithVersion(Version3).Encode(&in)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
 	var out uint
-	err = NewDecoder(buf).WithVersion3().Decode(&out)
+	err = NewDecoder().WithReader(buf).WithVersion(Version3).Decode(&out)
 	if err != nil {
 		t.Error(err)
 		return
@@ -111,14 +111,14 @@ func TestFloat3(t *testing.T) {
 	buf := bytes.NewBuffer(bs)
 
 	in := 1.0
-	err := NewEncoder(buf).WithVersion3().Encode(&in)
+	err := NewEncoder().WithWriter(buf).WithVersion(Version3).Encode(&in)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
 	var out float64
-	err = NewDecoder(buf).WithVersion3().Decode(&out)
+	err = NewDecoder().WithReader(buf).WithVersion(Version3).Decode(&out)
 	if err != nil {
 		t.Error(err)
 		return
@@ -150,14 +150,14 @@ func TestString3(t *testing.T) {
 	buf := bytes.NewBuffer(bs)
 
 	in := "1"
-	err := NewEncoder(buf).WithVersion3().Encode(&in)
+	err := NewEncoder().WithWriter(buf).WithVersion(Version3).Encode(&in)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
 	var out string
-	err = NewDecoder(buf).WithVersion3().Decode(&out)
+	err = NewDecoder().WithReader(buf).WithVersion(Version3).Decode(&out)
 	if err != nil {
 		t.Error(err)
 		return
@@ -189,14 +189,14 @@ func TestBool3(t *testing.T) {
 	buf := bytes.NewBuffer(bs)
 
 	in := true
-	err := NewEncoder(buf).WithVersion3().Encode(&in)
+	err := NewEncoder().WithWriter(buf).WithVersion(Version3).Encode(&in)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
 	out := false
-	err = NewDecoder(buf).WithVersion3().Decode(&out)
+	err = NewDecoder().WithReader(buf).WithVersion(Version3).Decode(&out)
 	if err != nil {
 		t.Error(err)
 		return
@@ -361,14 +361,14 @@ func TestSlice3(t *testing.T) {
 	buf := bytes.NewBuffer(bs)
 
 	in := []interface{}{1.0, "1", true, map[string]interface{}{"Int": 1.0, "String": "1", "Bool": true}}
-	err := NewEncoder(buf).WithVersion3().Encode(&in)
+	err := NewEncoder().WithWriter(buf).WithVersion(Version3).Encode(&in)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
 	out := []interface{}{0.0, "0", false, map[string]interface{}{}}
-	err = NewDecoder(buf).WithVersion3().Decode(&out)
+	err = NewDecoder().WithReader(buf).WithVersion(Version3).Decode(&out)
 	if err != nil {
 		t.Error(err)
 		return

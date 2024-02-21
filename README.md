@@ -37,10 +37,10 @@ var bs []byte
 buf := bytes.NewBuffer(bs)
 
 in := 1
-NewEncoder(buf).Encode(&in)
+NewEncoder().WithWriter(buf).Encode(&in)
 
 var out int
-NewDecoder(buf).Decode(&out)
+NewDecoder().WithReader(buf).Decode(&out)
 ```
 
 ## Float
@@ -62,10 +62,10 @@ var bs []byte
 buf := bytes.NewBuffer(bs)
 
 in := 1
-NewEncoder(buf).WithVersion3().Encode(&in)
+NewEncoder().WithWriter(buf).WithVersion(Version3).Encode(&in)
 
 var out int
-NewDecoder(buf).WithVersion3().Decode(&out)
+NewDecoder().WithReader(buf).WithVersion(Version3).Decode(&out)
 ```
 
 ## String
@@ -87,10 +87,10 @@ var bs []byte
 buf := bytes.NewBuffer(bs)
 
 in := "1"
-NewEncoder(buf).WithVersion3().Encode(&in)
+NewEncoder().WithWriter(buf).WithVersion(Version3).Encode(&in)
 
 var out string
-NewDecoder(buf).WithVersion3().Decode(&out)
+NewDecoder().WithReader(buf).WithVersion(Version3).Decode(&out)
 ```
 
 ## Bool
@@ -112,10 +112,10 @@ var bs []byte
 buf := bytes.NewBuffer(bs)
 
 in := true
-NewEncoder(buf).WithVersion3().Encode(&in)
+NewEncoder().WithWriter(buf).WithVersion(Version3).Encode(&in)
 
 out := false
-NewDecoder(buf).WithVersion3().Decode(&out)
+NewDecoder().WithReader(buf).WithVersion(Version3).Decode(&out)
 ```
 
 ## Slice
@@ -137,10 +137,10 @@ var bs []byte
 buf := bytes.NewBuffer(bs)
 
 in := []interface{}{1.0, "1", true, map[string]interface{}{"Int": 1.0, "String": "1", "Bool": true}}
-NewEncoder(buf).WithVersion3().Encode(&in)
+NewEncoder().WithWriter(buf).WithVersion(Version3).Encode(&in)
 
 out := []interface{}{0.0, "0", false, map[string]interface{}{}}
-NewDecoder(buf).WithVersion3().Decode(&out)
+NewDecoder().WithReader(buf).WithVersion(Version3).Decode(&out)
 ```
 
 ## Struct

@@ -17,24 +17,31 @@
 package amf
 
 import (
+	"errors"
 	"io"
 )
 
 // An Encoder writes AMF values to an output stream.
 type Encoder struct {
-	w    io.Writer
-	ver3 bool
-	err  error
+	w   io.Writer
+	v3  bool
+	err error
 }
 
-// NewEncoder returns a new encoder that writes to w.
-func NewEncoder(w io.Writer) *Encoder {
-	return &Encoder{w: w}
+// NewEncoder returns a new encoder.
+func NewEncoder() *Encoder {
+	return &Encoder{}
 }
 
-// WithVersion3 set encode type to AMF3.
-func (enc *Encoder) WithVersion3() *Encoder {
-	enc.ver3 = true
+// WithWriter set Writer.
+func (enc *Encoder) WithWriter(w io.Writer) *Encoder {
+	enc.w = w
+	return enc
+}
+
+// WithVersion set AMF codec version.
+func (enc *Encoder) WithVersion(v Version) *Encoder {
+	enc.v3 = v == Version3
 	return enc
 }
 
@@ -48,10 +55,14 @@ func (enc *Encoder) Encode(v any) error {
 		return enc.err
 	}
 
+	if enc.w == nil {
+		return errors.New("writer must be set")
+	}
+
 	e := newEncodeState()
 	defer encodeStatePool.Put(e)
 
-	err := e.marshal(v, encOpts{ver3: enc.ver3})
+	err := e.marshal(v, encOpts{v3: enc.v3})
 	if err != nil {
 		return err
 	}
@@ -65,24 +76,30 @@ func (enc *Encoder) Encode(v any) error {
 
 // A Decoder reads and decodes AMF values from an input stream.
 type Decoder struct {
-	ver3 bool
-	r    io.Reader
-	buf  []byte
-	d    decodeState
-	err  error
+	r   io.Reader
+	v3  bool
+	buf []byte
+	d   decodeState
+	err error
 }
 
 // NewDecoder returns a new decoder that reads from r.
 //
 // The decoder introduces its own buffering and may
 // read data from r beyond the AMF values requested.
-func NewDecoder(r io.Reader) *Decoder {
-	return &Decoder{r: r}
+func NewDecoder() *Decoder {
+	return &Decoder{}
 }
 
-// WithVersion3 set decode type to AMF3.
-func (dec *Decoder) WithVersion3() *Decoder {
-	dec.ver3 = true
+// WithReader set Reader.
+func (dec *Decoder) WithReader(r io.Reader) *Decoder {
+	dec.r = r
+	return dec
+}
+
+// WithVersion set AMF codec version.
+func (dec *Decoder) WithVersion(v Version) *Decoder {
+	dec.v3 = v == Version3
 	return dec
 }
 
@@ -96,15 +113,19 @@ func (dec *Decoder) Decode(v any) error {
 		return dec.err
 	}
 
+	if dec.r == nil {
+		return errors.New("reader must be set")
+	}
+
 	var err error
 	dec.buf, err = io.ReadAll(dec.r)
 	if err != nil {
 		return err
 	}
-	dec.d.init(dec.buf, dec.ver3)
+	dec.d.init(dec.buf, dec.v3)
 
 	// Don't save err from unmarshal into dec.err:
 	// the connection is still usable since we read a complete AMF
 	// object from it before the error happened.
-	return dec.d.unmarshal(v, decOpts{ver3: dec.ver3})
+	return dec.d.unmarshal(v, decOpts{v3: dec.v3})
 }

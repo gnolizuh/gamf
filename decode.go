@@ -113,7 +113,7 @@ func (r *Reference) locate(i int) (interface{}, bool) {
 }
 
 type decodeState struct {
-	ver3         bool
+	v3           bool
 	data         []byte
 	reader       *bytes.Reader
 	errorContext *errorContext
@@ -124,12 +124,12 @@ type decodeState struct {
 }
 
 type decOpts struct {
-	// ver3 means AMF version, which is true for AMF3, default is AMF0.
-	ver3 bool
+	// v3 means AMF version, which is true for AMF3, default is AMF0.
+	v3 bool
 }
 
-func (d *decodeState) init(data []byte, ver3 bool) *decodeState {
-	d.ver3 = ver3
+func (d *decodeState) init(data []byte, v3 bool) *decodeState {
+	d.v3 = v3
 	d.data = data
 	d.reader = bytes.NewReader(data)
 	d.strReference = Reference{m: make(map[interface{}]int), a: make([]interface{}, 0)}
@@ -219,7 +219,7 @@ func (d *decodeState) error(err error) {
 }
 
 func (d *decodeState) numberInterface() interface{} {
-	if d.ver3 {
+	if d.v3 {
 		return nil
 	}
 	return d.readFloat64()
@@ -236,7 +236,7 @@ func (d *decodeState) number(v reflect.Value, _ decOpts) error {
 }
 
 func (d *decodeState) integerInterface() interface{} {
-	if !d.ver3 {
+	if !d.v3 {
 		return nil
 	}
 	return d.readU29()
@@ -275,7 +275,7 @@ func (d *decodeState) integer(v reflect.Value, _ decOpts) error {
 }
 
 func (d *decodeState) doubleInterface() interface{} {
-	if !d.ver3 {
+	if !d.v3 {
 		return nil
 	}
 	return d.readFloat64()
@@ -293,7 +293,7 @@ func (d *decodeState) double(v reflect.Value, _ decOpts) error {
 
 func (d *decodeState) boolInterface(m byte) interface{} {
 	b := false
-	if !d.ver3 {
+	if !d.v3 {
 		b = d.readByte() != 0
 	} else {
 		b = m == TrueMarker3
@@ -322,7 +322,7 @@ func (d *decodeState) decodeString() ([]byte, error) {
 		return bs, err
 	}
 
-	if !d.ver3 {
+	if !d.v3 {
 		switch m {
 		case StringMarker0:
 			return d.readString()
@@ -345,7 +345,7 @@ func (d *decodeState) decodeString() ([]byte, error) {
 
 func (d *decodeState) readString() ([]byte, error) {
 	var bs []byte
-	if !d.ver3 {
+	if !d.v3 {
 		s := make([]byte, d.readUInt16())
 		_, err := d.reader.Read(s)
 		if err != nil {
@@ -442,7 +442,7 @@ func (d *decodeState) object0Interface() interface{} {
 
 // object3Interface AMF0 only.
 func (d *decodeState) object3Interface() interface{} {
-	if !d.ver3 {
+	if !d.v3 {
 		return nil
 	}
 
@@ -498,7 +498,7 @@ func (d *decodeState) object(v reflect.Value, opts decOpts) error {
 	// Decoding into nil interface? Switch to non-reflect code.
 	if v.Kind() == reflect.Interface && v.NumMethod() == 0 {
 		var oi interface{}
-		if !opts.ver3 {
+		if !opts.v3 {
 			oi = d.object0Interface()
 		} else {
 			oi = d.object3Interface()
@@ -543,7 +543,7 @@ func (d *decodeState) object(v reflect.Value, opts decOpts) error {
 	}
 
 	// write start marker
-	if opts.ver3 {
+	if opts.v3 {
 		ui := d.readU29()
 		if (ui & 0x01) == 0 {
 			vb, ok := d.objReference.locate(int(ui >> 1))
@@ -751,7 +751,7 @@ func (d *decodeState) ecmaArray(v reflect.Value, opts decOpts) error {
 }
 
 func (d *decodeState) byteArrayInterface() interface{} {
-	if !d.ver3 {
+	if !d.v3 {
 		return nil
 	}
 
@@ -963,7 +963,7 @@ func (d *decodeState) dateInterface() interface{} {
 
 // date AMF3 only
 func (d *decodeState) date(v reflect.Value, opts decOpts) error {
-	if !opts.ver3 {
+	if !opts.v3 {
 		return nil
 	}
 
@@ -1049,7 +1049,7 @@ func (d *decodeState) xmlDocumentInterface() interface{} {
 }
 
 func (d *decodeState) xmlDocument(v reflect.Value, opts decOpts) error {
-	if !opts.ver3 {
+	if !opts.v3 {
 		return d.longString(v, opts)
 	} else {
 		return d.string(v, opts)
@@ -1057,7 +1057,7 @@ func (d *decodeState) xmlDocument(v reflect.Value, opts decOpts) error {
 }
 
 func (d *decodeState) xml(v reflect.Value, opts decOpts) error {
-	if !opts.ver3 {
+	if !opts.v3 {
 		return d.longString(v, opts)
 	} else {
 		return d.string(v, opts)
@@ -1143,7 +1143,7 @@ func (d *decodeState) valueInterface() interface{} {
 		return nil
 	}
 
-	if !d.ver3 {
+	if !d.v3 {
 		return d.value0Interface(m)
 	} else {
 		return d.value3Interface(m)
@@ -1165,7 +1165,7 @@ func (d *decodeState) value(v reflect.Value, opts decOpts) error {
 		return errors.New("read marker failed")
 	}
 
-	if !opts.ver3 {
+	if !opts.v3 {
 		return d.value0(m, v, opts)
 	} else {
 		return d.value3(m, v, opts)

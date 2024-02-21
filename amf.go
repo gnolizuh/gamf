@@ -16,6 +16,13 @@
 
 package amf
 
+type Version uint8
+
+const (
+	Version0 = Version(0)
+	Version3 = Version(3)
+)
+
 // https://rtmp.veriskope.com/pdf/amf0-file-format-specification.pdf
 const (
 	NumberMarker0 = iota
