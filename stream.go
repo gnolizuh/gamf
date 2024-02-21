@@ -22,13 +22,20 @@ import (
 
 // An Encoder writes AMF values to an output stream.
 type Encoder struct {
-	w   io.Writer
-	err error
+	w    io.Writer
+	ver3 bool
+	err  error
 }
 
 // NewEncoder returns a new encoder that writes to w.
 func NewEncoder(w io.Writer) *Encoder {
 	return &Encoder{w: w}
+}
+
+// WithVersion3 set encode type to AMF3.
+func (enc *Encoder) WithVersion3() *Encoder {
+	enc.ver3 = true
+	return enc
 }
 
 // Encode writes the AMF encoding of v to the stream,
@@ -44,7 +51,7 @@ func (enc *Encoder) Encode(v any) error {
 	e := newEncodeState()
 	defer encodeStatePool.Put(e)
 
-	err := e.marshal(v, encOpts{})
+	err := e.marshal(v, encOpts{ver3: enc.ver3})
 	if err != nil {
 		return err
 	}
@@ -58,10 +65,11 @@ func (enc *Encoder) Encode(v any) error {
 
 // A Decoder reads and decodes AMF values from an input stream.
 type Decoder struct {
-	r   io.Reader
-	buf []byte
-	d   decodeState
-	err error
+	ver3 bool
+	r    io.Reader
+	buf  []byte
+	d    decodeState
+	err  error
 }
 
 // NewDecoder returns a new decoder that reads from r.
@@ -70,6 +78,12 @@ type Decoder struct {
 // read data from r beyond the AMF values requested.
 func NewDecoder(r io.Reader) *Decoder {
 	return &Decoder{r: r}
+}
+
+// WithVersion3 set decode type to AMF3.
+func (dec *Decoder) WithVersion3() *Decoder {
+	dec.ver3 = true
+	return dec
 }
 
 // Decode reads the next AMF-encoded value from its
@@ -87,10 +101,10 @@ func (dec *Decoder) Decode(v any) error {
 	if err != nil {
 		return err
 	}
-	dec.d.init(dec.buf)
+	dec.d.init(dec.buf, dec.ver3)
 
 	// Don't save err from unmarshal into dec.err:
 	// the connection is still usable since we read a complete AMF
 	// object from it before the error happened.
-	return dec.d.unmarshal(v)
+	return dec.d.unmarshal(v, decOpts{ver3: dec.ver3})
 }
