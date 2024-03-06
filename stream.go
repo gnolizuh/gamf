@@ -21,6 +21,12 @@ import (
 	"io"
 )
 
+type Reader interface {
+	io.Reader
+	io.ByteScanner
+	Len() int
+}
+
 // An Encoder writes AMF values to an output stream.
 type Encoder struct {
 	w   io.Writer
@@ -80,7 +86,7 @@ func (enc *Encoder) Encode(vs ...any) error {
 
 // A Decoder reads and decodes AMF values from an input stream.
 type Decoder struct {
-	r   io.Reader
+	r   Reader
 	v3  bool
 	buf []byte
 	d   decodeState
@@ -96,7 +102,7 @@ func NewDecoder() *Decoder {
 }
 
 // WithReader set Reader.
-func (dec *Decoder) WithReader(r io.Reader) *Decoder {
+func (dec *Decoder) WithReader(r Reader) *Decoder {
 	dec.r = r
 	return dec
 }
