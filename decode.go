@@ -17,11 +17,13 @@
 package amf
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"reflect"
 	"strconv"
 	"strings"
@@ -115,7 +117,7 @@ func (r *Reference) locate(i int) (any, bool) {
 type decodeState struct {
 	v3           bool
 	data         []byte
-	reader       *bytes.Reader
+	reader       *bufio.Reader
 	errorContext *errorContext
 	savedError   error
 
@@ -128,10 +130,9 @@ type decOpts struct {
 	v3 bool
 }
 
-func (d *decodeState) init(data []byte, v3 bool) *decodeState {
+func (d *decodeState) init(r io.Reader, v3 bool) *decodeState {
 	d.v3 = v3
-	d.data = data
-	d.reader = bytes.NewReader(data)
+	d.reader = bufio.NewReader(r)
 	d.strReference = Reference{m: make(map[any]int), a: make([]any, 0)}
 	d.objReference = Reference{m: make(map[any]int), a: make([]any, 0)}
 	return d
@@ -522,7 +523,7 @@ func (d *decodeState) object(v reflect.Value, opts decOpts) error {
 			reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
 		default:
-			d.saveError(&UnmarshalTypeError{Value: "object", Type: t, Offset: int64(d.reader.Len())})
+			d.saveError(&UnmarshalTypeError{Value: "object", Type: t, Offset: int64(d.reader.Size() - d.reader.Buffered())})
 			return nil
 		}
 		if v.IsNil() {
@@ -532,7 +533,7 @@ func (d *decodeState) object(v reflect.Value, opts decOpts) error {
 		fields = cachedTypeFields(t)
 		// ok
 	default:
-		d.saveError(&UnmarshalTypeError{Value: "object", Type: t, Offset: int64(d.reader.Len())})
+		d.saveError(&UnmarshalTypeError{Value: "object", Type: t, Offset: int64(d.reader.Size() - d.reader.Buffered())})
 		return nil
 	}
 
@@ -665,7 +666,7 @@ func (d *decodeState) object(v reflect.Value, opts decOpts) error {
 					s := string(on)
 					n, err := strconv.ParseInt(s, 10, 64)
 					if err != nil || reflect.Zero(kt).OverflowInt(n) {
-						d.saveError(&UnmarshalTypeError{Value: "number " + s, Type: kt, Offset: int64(d.reader.Len() + 1)})
+						d.saveError(&UnmarshalTypeError{Value: "number " + s, Type: kt, Offset: int64(d.reader.Size() - d.reader.Buffered() + 1)})
 						break
 					}
 					kv = reflect.ValueOf(n).Convert(kt)
@@ -673,7 +674,7 @@ func (d *decodeState) object(v reflect.Value, opts decOpts) error {
 					s := string(on)
 					n, err := strconv.ParseUint(s, 10, 64)
 					if err != nil || reflect.Zero(kt).OverflowUint(n) {
-						d.saveError(&UnmarshalTypeError{Value: "number " + s, Type: kt, Offset: int64(d.reader.Len() + 1)})
+						d.saveError(&UnmarshalTypeError{Value: "number " + s, Type: kt, Offset: int64(d.reader.Size() - d.reader.Buffered() + 1)})
 						break
 					}
 					kv = reflect.ValueOf(n).Convert(kt)
@@ -783,7 +784,7 @@ func (d *decodeState) byteArray(v reflect.Value, opts decOpts) error {
 	ba := x.([]byte)
 	switch v.Kind() {
 	default:
-		d.saveError(&UnmarshalTypeError{Value: "array", Type: v.Type(), Offset: int64(d.reader.Len())})
+		d.saveError(&UnmarshalTypeError{Value: "array", Type: v.Type(), Offset: int64(d.reader.Size() - d.reader.Buffered())})
 		return nil
 	case reflect.Array, reflect.Slice:
 		break
@@ -851,7 +852,7 @@ func (d *decodeState) strictArray(v reflect.Value, opts decOpts) error {
 		// Otherwise it's invalid.
 		fallthrough
 	default:
-		d.saveError(&UnmarshalTypeError{Value: "array", Type: v.Type(), Offset: int64(d.reader.Len())})
+		d.saveError(&UnmarshalTypeError{Value: "array", Type: v.Type(), Offset: int64(d.reader.Size() - d.reader.Buffered())})
 		return nil
 	case reflect.Array, reflect.Slice:
 		break
@@ -1156,7 +1157,11 @@ func (d *decodeState) valueInterface() any {
 func (d *decodeState) value(v reflect.Value, opts decOpts) error {
 	u, pv := indirect(v)
 	if u != nil {
-		return u.UnmarshalAMF(d.data[d.reader.Len():])
+		data, err := io.ReadAll(d.reader)
+		if err != nil {
+			return err
+		}
+		return u.UnmarshalAMF(data)
 	}
 	v = pv
 
@@ -1367,7 +1372,7 @@ func (d *decodeState) readObjectName() ([]byte, error) {
 
 func Unmarshal(data []byte, vs ...any) error {
 	var d decodeState
-	d.init(data, false)
+	d.init(bytes.NewReader(data), false)
 	for _, v := range vs {
 		if err := d.unmarshal(v, decOpts{}); err != nil {
 			return err

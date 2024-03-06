@@ -122,11 +122,7 @@ func (dec *Decoder) Decode(vs ...any) error {
 	}
 
 	var err error
-	dec.buf, err = io.ReadAll(dec.r)
-	if err != nil {
-		return err
-	}
-	dec.d.init(dec.buf, dec.v3)
+	dec.d.init(dec.r, dec.v3)
 
 	// Don't save err from unmarshal into dec.err:
 	// the connection is still usable since we read a complete AMF
