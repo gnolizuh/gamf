@@ -821,16 +821,14 @@ func Marshal(vs ...any) ([]byte, error) {
 	e := newEncodeState()
 	defer encodeStatePool.Put(e)
 
-	var b []byte
 	for _, v := range vs {
 		err := e.marshal(v, encOpts{})
 		if err != nil {
 			return nil, err
 		}
-		b = append(b, e.Bytes()...)
 	}
 
-	return b, nil
+	return e.Bytes(), nil
 }
 
 // Marshaler is the interface implemented by types that

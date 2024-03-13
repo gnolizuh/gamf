@@ -74,13 +74,14 @@ func (enc *Encoder) Encode(vs ...any) error {
 		if err != nil {
 			return err
 		}
-
-		b := e.Bytes()
-		if _, err = enc.w.Write(b); err != nil {
-			enc.err = err
-			return err
-		}
 	}
+
+	b := e.Bytes()
+	if _, err = enc.w.Write(b); err != nil {
+		enc.err = err
+		return err
+	}
+
 	return err
 }
 
