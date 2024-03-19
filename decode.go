@@ -1383,6 +1383,11 @@ func (d *decodeState) unmarshal(v any, opts decOpts) error {
 		return &InvalidUnmarshalError{reflect.TypeOf(v)}
 	}
 
+	// Return io.EOF to upper layer if reader has zero length.
+	if d.reader.Len() == 0 {
+		return io.EOF
+	}
+
 	// We decode rv not rv.Elem because the Unmarshaler interface
 	// test must be applied at the top level of the value.
 	err := d.value(rv, opts)
